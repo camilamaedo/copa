@@ -44,5 +44,5 @@ def carregar_apostas() -> pd.DataFrame:
 
 def total_respostas() -> int:
     client = get_client()
-    response = client.table("apostas").select("id", count="exact").execute()
+    response = client.table("apostas").select("*", count="exact").execute()
     return response.count or 0
