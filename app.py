@@ -165,8 +165,8 @@ with aba_resultados:
     st.divider()
 
     st.subheader("📅 Responses over time / Respostas ao longo do tempo")
-    df["criado_em"] = pd.to_datetime(df["criado_em"], utc=True).dt.tz_localize(None)
-    por_dia = df.resample("D", on="criado_em").size().reset_index(name="Responses")
+    df["criado_em"] = pd.to_datetime(df["criado_em"]).dt.date
+    por_dia = df.groupby("criado_em").size().reset_index(name="Responses")
     fig4 = px.line(por_dia, x="criado_em", y="Responses", markers=True)
     fig4.update_layout(xaxis_title="Date / Data", yaxis_title="Responses / Respostas")
     st.plotly_chart(fig4, use_container_width=True)
