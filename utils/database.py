@@ -1,81 +1,48 @@
 import os
 import pandas as pd
-import psycopg2
-from psycopg2.extras import RealDictCursor
+from supabase import create_client
 
-# Lê a URL do ambiente (configurada no Streamlit Cloud)
-DATABASE_URL = os.environ.get("DATABASE_URL")
+SUPABASE_URL = os.environ.get("SUPABASE_URL")
+SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 
 # 32 países da Copa do Mundo 2026 — PT/EN
 TIMES_COPA = sorted([
-    "Germany / Alemanha",
-    "Argentina / Argentina",
-    "Australia / Austrália",
-    "Belgium / Bélgica",
-    "Brazil / Brasil",
-    "Canada / Canadá",
-    "Croatia / Croácia",
-    "Denmark / Dinamarca",
-    "Egypt / Egito",
-    "Ecuador / Equador",
-    "Spain / Espanha",
-    "USA / EUA",
-    "France / França",
-    "Netherlands / Holanda",
-    "England / Inglaterra",
-    "Iran / Irã",
-    "Japan / Japão",
-    "Morocco / Marrocos",
-    "Mexico / México",
-    "Nigeria / Nigéria",
-    "Norway / Noruega",
-    "New Zealand / Nova Zelândia",
-    "Poland / Polônia",
-    "Portugal / Portugal",
-    "Qatar / Qatar",
-    "Czech Republic / República Tcheca",
-    "Senegal / Senegal",
-    "Serbia / Sérvia",
-    "Switzerland / Suíça",
-    "Turkey / Turquia",
-    "Ukraine / Ucrânia",
-    "Uruguay / Uruguai",
+    "Germany / Alemanha", "Argentina / Argentina", "Australia / Austrália",
+    "Belgium / Bélgica", "Brazil / Brasil", "Canada / Canadá",
+    "Croatia / Croácia", "Denmark / Dinamarca", "Egypt / Egito",
+    "Ecuador / Equador", "Spain / Espanha", "USA / EUA",
+    "France / França", "Netherlands / Holanda", "England / Inglaterra",
+    "Iran / Irã", "Japan / Japão", "Morocco / Marrocos",
+    "Mexico / México", "Nigeria / Nigéria", "Norway / Noruega",
+    "New Zealand / Nova Zelândia", "Poland / Polônia", "Portugal / Portugal",
+    "Qatar / Qatar", "Czech Republic / República Tcheca", "Senegal / Senegal",
+    "Serbia / Sérvia", "Switzerland / Suíça", "Turkey / Turquia",
+    "Ukraine / Ucrânia", "Uruguay / Uruguai",
 ])
 
-def get_connection():
-    return psycopg2.connect(DATABASE_URL)
+def get_client():
+    return create_client(SUPABASE_URL, SUPABASE_KEY)
 
 def criar_tabela():
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute("""
-                CREATE TABLE IF NOT EXISTS apostas (
-                    id          SERIAL PRIMARY KEY,
-                    nome        TEXT,
-                    pais_origem TEXT,
-                    campeao     TEXT NOT NULL,
-                    vice        TEXT NOT NULL,
-                    comentario  TEXT,
-                    criado_em   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-        conn.commit()
+    # A tabela é criada direto no Supabase — nada a fazer aqui
+    pass
 
 def salvar_aposta(nome, pais_origem, campeao, vice, comentario):
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute("""
-                INSERT INTO apostas (nome, pais_origem, campeao, vice, comentario)
-                VALUES (%s, %s, %s, %s, %s)
-            """, (nome, pais_origem, campeao, vice, comentario))
-        conn.commit()
+    client = get_client()
+    client.table("apostas").insert({
+        "nome": nome,
+        "pais_origem": pais_origem,
+        "campeao": campeao,
+        "vice": vice,
+        "comentario": comentario,
+    }).execute()
 
 def carregar_apostas() -> pd.DataFrame:
-    with get_connection() as conn:
-        return pd.read_sql("SELECT * FROM apostas ORDER BY criado_em DESC", conn)
+    client = get_client()
+    response = client.table("apostas").select("*").order("criado_em", desc=True).execute()
+    return pd.DataFrame(response.data)
 
 def total_respostas() -> int:
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute("SELECT COUNT(*) FROM apostas")
-            return cur.fetchone()[0]
+    client = get_client()
+    response = client.table("apostas").select("id", count="exact").execute()
+    return response.count or 0
