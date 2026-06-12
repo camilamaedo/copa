@@ -4,17 +4,41 @@ from pathlib import Path
 
 DB_PATH = Path(__file__).parent / "db" / "apostas.db"
 
-# 32 países da Copa do Mundo 2026
-TIMES_COPA = [
-    "Argentina", "Austrália", "Bélgica", "Brasil", "Canadá",
-    "Croácia", "Dinamarca", "Egito", "Equador", "Espanha",
-    "EUA", "França", "Holanda", "Inglaterra", "Irã",
-    "Japão", "Marrocos", "México", "Nigéria", "Noruega",
-    "Nova Zelândia", "Polônia", "Portugal", "Qatar", "República Tcheca",
-    "Senegal", "Sérvia", "Suíça", "Turquia", "Ucrânia",
-    "Uruguai", "Alemanha"
-]
-TIMES_COPA = sorted(TIMES_COPA)
+# 32 países da Copa do Mundo 2026 — PT/EN
+TIMES_COPA = sorted([
+    "Germany / Alemanha",
+    "Argentina / Argentina",
+    "Australia / Austrália",
+    "Belgium / Bélgica",
+    "Brazil / Brasil",
+    "Canada / Canadá",
+    "Croatia / Croácia",
+    "Denmark / Dinamarca",
+    "Egypt / Egito",
+    "Ecuador / Equador",
+    "Spain / Espanha",
+    "USA / EUA",
+    "France / França",
+    "Netherlands / Holanda",
+    "England / Inglaterra",
+    "Iran / Irã",
+    "Japan / Japão",
+    "Morocco / Marrocos",
+    "Mexico / México",
+    "Nigeria / Nigéria",
+    "Norway / Noruega",
+    "New Zealand / Nova Zelândia",
+    "Poland / Polônia",
+    "Portugal / Portugal",
+    "Qatar / Qatar",
+    "Czech Republic / República Tcheca",
+    "Senegal / Senegal",
+    "Serbia / Sérvia",
+    "Switzerland / Suíça",
+    "Turkey / Turquia",
+    "Ukraine / Ucrânia",
+    "Uruguay / Uruguai",
+])
 
 def get_connection():
     DB_PATH.parent.mkdir(exist_ok=True)

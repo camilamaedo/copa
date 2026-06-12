@@ -49,13 +49,13 @@ with aba_aposta:
 
         campeao = st.selectbox(
             "🏆 Who will be the champion? / Quem vai ser campeão?",
-            TIMES_COPA
+            ["— select / selecione —"] + TIMES_COPA
         )
 
         vice_opcoes = [t for t in TIMES_COPA if t != campeao]
         vice = st.selectbox(
             "🥈 Who will be the runner-up? / Quem vai ser vice-campeão?",
-            vice_opcoes
+            ["— select / selecione —"] + vice_opcoes
         )
 
         comentario = st.text_area(
@@ -73,7 +73,10 @@ with aba_aposta:
     if enviado:
         nome_final = nome.strip() if nome.strip() else "Anonymous"
         pais_final = pais_origem if pais_origem != "— select / selecione —" else None
-        salvar_aposta(nome_final, pais_final, campeao, vice, comentario)
+        if campeao == "— select / selecione —" or vice == "— select / selecione —":
+            st.error("Please select champion and runner-up. / Por favor selecione campeão e vice.")
+        else:
+            salvar_aposta(nome_final, pais_final, campeao, vice, comentario)
         st.success(f"✅ Bet registered! / Aposta registrada! — **{campeao}** 🏆")
         st.balloons()
 
