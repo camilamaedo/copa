@@ -181,4 +181,4 @@ with aba_resultados:
         st.download_button("📋 Download JSON", df.to_json(orient="records", force_ascii=False).encode("utf-8"), "apostas.json", "application/json", use_container_width=True)
 
     with st.expander("See all responses / Ver todas as respostas"):
-        st.dataframe(df.drop(columns=["id"]), use_container_width=True)
+        st.dataframe(df.drop(columns=["id"], errors="ignore"), use_container_width=True)
