@@ -4,7 +4,7 @@ import plotly.express as px
 from utils.database import criar_tabela, salvar_aposta, carregar_apostas, total_respostas, TIMES_COPA
 
 st.set_page_config(
-    page_title="World Cup Research / Pesquisa Copa do Mundo",
+    page_title="World Cup 2026 Research / Pesquisa Copa 2026",
     page_icon="⚽",
     layout="centered"
 )
@@ -71,14 +71,14 @@ with aba_aposta:
         )
 
     if enviado:
-        nome_final = nome.strip() if nome.strip() else "Anonymous"
-        pais_final = pais_origem if pais_origem != "— select / selecione —" else None
         if campeao == "— select / selecione —" or vice == "— select / selecione —":
             st.error("Please select champion and runner-up. / Por favor selecione campeão e vice.")
         else:
+            nome_final = nome.strip() if nome.strip() else "Anonymous"
+            pais_final = pais_origem if pais_origem != "— select / selecione —" else None
             salvar_aposta(nome_final, pais_final, campeao, vice, comentario)
-        st.success(f"✅ Bet registered! / Aposta registrada! — **{campeao}** 🏆")
-        st.balloons()
+            st.success(f"✅ Bet registered! / Aposta registrada! — **{campeao}** 🏆")
+            st.balloons()
 
 # ─────────────────────────────────────────
 # ABA 2 — DASHBOARD
@@ -98,7 +98,7 @@ with aba_resultados:
     col1, col2, col3 = st.columns(3)
     col1.metric("Total responses / Respostas", total)
     col2.metric("Favourite / Favorito 🏆", df["campeao"].mode()[0])
-    col3.metric("Countries / Países representados", df["pais_origem"].dropna().nunique())
+    col3.metric("Countries / Países", df["pais_origem"].dropna().nunique())
 
     st.divider()
 
@@ -165,9 +165,9 @@ with aba_resultados:
     st.divider()
 
     st.subheader("📅 Responses over time / Respostas ao longo do tempo")
-    df["criado_em"] = pd.to_datetime(df["criado_em"]).dt.date
-    por_dia = df.groupby("criado_em").size().reset_index(name="Responses")
-    fig4 = px.line(por_dia, x="criado_em", y="Responses", markers=True)
+    df["data"] = pd.to_datetime(df["criado_em"]).dt.date
+    por_dia = df.groupby("data").size().reset_index(name="Responses")
+    fig4 = px.line(por_dia, x="data", y="Responses", markers=True)
     fig4.update_layout(xaxis_title="Date / Data", yaxis_title="Responses / Respostas")
     st.plotly_chart(fig4, use_container_width=True)
 
@@ -176,9 +176,20 @@ with aba_resultados:
     st.subheader("⬇️ Export / Exportar dados")
     col_x, col_y = st.columns(2)
     with col_x:
-        st.download_button("📄 Download CSV", df.to_csv(index=False).encode("utf-8"), "apostas.csv", "text/csv", use_container_width=True)
+        st.download_button(
+            "📄 Download CSV",
+            df.to_csv(index=False).encode("utf-8"),
+            "apostas.csv", "text/csv",
+            use_container_width=True
+        )
     with col_y:
-        st.download_button("📋 Download JSON", df.to_json(orient="records", force_ascii=False).encode("utf-8"), "apostas.json", "application/json", use_container_width=True)
+        st.download_button(
+            "📋 Download JSON",
+            df.to_json(orient="records", force_ascii=False, date_format="iso").encode("utf-8"),
+            "apostas.json", "application/json",
+            use_container_width=True
+        )
 
     with st.expander("See all responses / Ver todas as respostas"):
-        st.dataframe(df.drop(columns=["id"], errors="ignore"), use_container_width=True)
+        colunas = [c for c in df.columns if c != "id"]
+        st.dataframe(df[colunas], use_container_width=True)
