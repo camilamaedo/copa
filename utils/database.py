@@ -1,8 +1,10 @@
-import sqlite3
+import os
 import pandas as pd
-from pathlib import Path
+import psycopg2
+from psycopg2.extras import RealDictCursor
 
-DB_PATH = Path(__file__).parent / "db" / "apostas.db"
+# Lê a URL do ambiente (configurada no Streamlit Cloud)
+DATABASE_URL = os.environ.get("DATABASE_URL")
 
 # 32 países da Copa do Mundo 2026 — PT/EN
 TIMES_COPA = sorted([
@@ -41,30 +43,31 @@ TIMES_COPA = sorted([
 ])
 
 def get_connection():
-    DB_PATH.parent.mkdir(exist_ok=True)
-    return sqlite3.connect(DB_PATH)
+    return psycopg2.connect(DATABASE_URL)
 
 def criar_tabela():
     with get_connection() as conn:
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS apostas (
-                id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                nome        TEXT,
-                pais_origem TEXT,
-                campeao     TEXT NOT NULL,
-                vice        TEXT NOT NULL,
-                comentario  TEXT,
-                criado_em   DATETIME DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
+        with conn.cursor() as cur:
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS apostas (
+                    id          SERIAL PRIMARY KEY,
+                    nome        TEXT,
+                    pais_origem TEXT,
+                    campeao     TEXT NOT NULL,
+                    vice        TEXT NOT NULL,
+                    comentario  TEXT,
+                    criado_em   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
         conn.commit()
 
 def salvar_aposta(nome, pais_origem, campeao, vice, comentario):
     with get_connection() as conn:
-        conn.execute("""
-            INSERT INTO apostas (nome, pais_origem, campeao, vice, comentario)
-            VALUES (?, ?, ?, ?, ?)
-        """, (nome, pais_origem, campeao, vice, comentario))
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO apostas (nome, pais_origem, campeao, vice, comentario)
+                VALUES (%s, %s, %s, %s, %s)
+            """, (nome, pais_origem, campeao, vice, comentario))
         conn.commit()
 
 def carregar_apostas() -> pd.DataFrame:
@@ -73,4 +76,6 @@ def carregar_apostas() -> pd.DataFrame:
 
 def total_respostas() -> int:
     with get_connection() as conn:
-        return conn.execute("SELECT COUNT(*) FROM apostas").fetchone()[0]
+        with conn.cursor() as cur:
+            cur.execute("SELECT COUNT(*) FROM apostas")
+            return cur.fetchone()[0]
