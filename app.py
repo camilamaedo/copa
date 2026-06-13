@@ -74,6 +74,7 @@ NOME_DATASET = {
 def carregar_historico():
     df = pd.read_csv("results_2000.csv")
     df['date'] = pd.to_datetime(df['date'])
+    df = df.dropna(subset=['home_score', 'away_score'])  # remove jogos sem placar
     df['peso_torneio'] = df['tournament'].map(PESOS_TORNEIO).fillna(1.5)
     ano_min = df['date'].dt.year.min()
     ano_max = df['date'].dt.year.max()
@@ -205,7 +206,7 @@ with aba_aposta:
         vice_opcoes = [t for t in TIMES_COPA if t != campeao]
         vice = st.selectbox(
             "🥈 Who will be the runner-up? / Quem vai ser vice-campeão?",
-            ["— select / selecione —"] + vice_opcoes,
+            vice_opcoes,
             key=f"vice_{campeao}"
         )
         comentario = st.text_area(
@@ -216,7 +217,7 @@ with aba_aposta:
         enviado = st.form_submit_button("Submit / Enviar ✅", use_container_width=True, type="primary")
 
     if enviado:
-        if campeao.startswith("—") or vice.startswith("—"):
+        if campeao.startswith("—"):
             st.error("Please select champion and runner-up. / Por favor selecione campeão e vice.")
         else:
             nome_final = nome.strip() if nome.strip() else "Anonymous"
@@ -335,39 +336,40 @@ with aba_prob:
     # Placar de probabilidade
     col_a, col_b, col_c = st.columns([2, 1, 2])
     with col_a:
-        st.markdown(f"### {f1} {t1_label}")
+        st.markdown(f"### {t1_label}")
         st.markdown(f"## **{r['prob1']}%**")
     with col_b:
         st.markdown("### VS")
         st.markdown("##### to win / de ganhar")
     with col_c:
-        st.markdown(f"### {f2} {t2_label}")
+        st.markdown(f"### {t2_label}")
         st.markdown(f"## **{r['prob2']}%**")
 
     # Barra visual
+    empate_pct = round(100 - r['prob1'] - r['prob2'] + 5, 1)  # estimativa de empate
     fig = go.Figure(go.Bar(
-        x=[r['prob1'], r['prob2']],
-        y=[f"{f1} {t1_label}", f"{f2} {t2_label}"],
+        x=[r['prob1'], empate_pct, r['prob2']],
+        y=[t1_label, "Draw / Empate", t2_label],
         orientation='h',
-        marker_color=['#2ecc71', '#e74c3c'],
-        text=[f"{r['prob1']}%", f"{r['prob2']}%"],
+        marker_color=['#2ecc71', '#95a5a6', '#e74c3c'],
+        text=[f"{r['prob1']}%", f"{empate_pct}%", f"{r['prob2']}%"],
         textposition='outside'
     ))
     fig.update_layout(xaxis=dict(range=[0, 100], title="Probability / Probabilidade (%)"),
-                      height=200, showlegend=False, margin=dict(l=10, r=40, t=10, b=10))
+                      height=250, showlegend=False, margin=dict(l=10, r=40, t=10, b=10))
     st.plotly_chart(fig, use_container_width=True)
 
     # Detalhamento dos componentes
     with st.expander("📊 See model breakdown / Ver detalhes do modelo"):
         col_x, col_y = st.columns(2)
         with col_x:
-            st.markdown(f"**{f1} {t1_label}**")
+            st.markdown(f"**{t1_label}**")
             st.write(f"🏅 FIFA Ranking: {r['fifa1']}%")
             st.write(f"📈 Historical / Histórico: {r['hist1']}%")
             if r['tem_cd']:
                 st.write(f"⚔️ Head-to-head / Confronto direto: {r['cd1']}%")
         with col_y:
-            st.markdown(f"**{f2} {t2_label}**")
+            st.markdown(f"**{t2_label}**")
             st.write(f"🏅 FIFA Ranking: {r['fifa2']}%")
             st.write(f"📈 Historical / Histórico: {r['hist2']}%")
             if r['tem_cd']:
@@ -380,10 +382,10 @@ with aba_prob:
         st.subheader(f"📋 Last matches / Últimos confrontos ({r['n_jogos']} found / encontrados)")
         ult = r['ultimos'][['date','home_team','home_score','away_score','away_team','tournament']].copy()
         ult['date'] = pd.to_datetime(ult['date']).dt.strftime('%d/%m/%Y')
-        ult['Score'] = ult['home_score'].astype(int).astype(str) + ' x ' + ult['away_score'].astype(int).astype(str)
+        ult['Score'] = ult['home_score'].fillna(0).astype(int).astype(str) + ' x ' + ult['away_score'].fillna(0).astype(int).astype(str)
         ult = ult.rename(columns={'date':'Date','home_team':'Home','away_team':'Away','tournament':'Tournament'})
         st.dataframe(ult[['Date','Home','Score','Away','Tournament']], use_container_width=True, hide_index=True)
     elif not r['tem_cd']:
-        st.info(f"No direct matches between {f1} {t1_label} and {f2} {t2_label} since 2000. / Nenhum confronto direto desde 2000.")
+        st.info(f"No direct matches between {t1_label} and {t2_label} since 2000. / Nenhum confronto direto desde 2000.")
 
     st.caption("⚖️ Model / Modelo: 50% FIFA Ranking (Jun/2026) + 40% historical performance + 10% head-to-head · Laplace smoothing applied")
