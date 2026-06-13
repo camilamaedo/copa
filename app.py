@@ -74,7 +74,7 @@ NOME_DATASET = {
 def carregar_historico():
     df = pd.read_csv("results_2000.csv")
     df['date'] = pd.to_datetime(df['date'])
-    df = df.dropna(subset=['home_score', 'away_score'])  # remove jogos sem placar
+    df = df.dropna(subset=['home_score', 'away_score'])
     df['peso_torneio'] = df['tournament'].map(PESOS_TORNEIO).fillna(1.5)
     ano_min = df['date'].dt.year.min()
     ano_max = df['date'].dt.year.max()
@@ -82,88 +82,69 @@ def carregar_historico():
     df['peso_final'] = df['peso_torneio'] * df['peso_tempo']
     return df
 
-def _stats_gerais(df, time):
-    jogos = df[(df['home_team'] == time) | (df['away_team'] == time)]
-    if len(jogos) == 0:
-        return 0.5
-    v = emp = d = 0
-    for _, row in jogos.iterrows():
-        peso = row['peso_final']
-        if row['home_team'] == time:
-            if row['home_score'] > row['away_score']: v += peso
-            elif row['home_score'] < row['away_score']: d += peso
-            else: emp += peso
-        else:
-            if row['away_score'] > row['home_score']: v += peso
-            elif row['away_score'] < row['home_score']: d += peso
-            else: emp += peso
-    total = v + emp + d
-    return v / total if total > 0 else 0.5
+def _elo_prob(pts1, pts2):
+    return 1 / (1 + 10 ** (-(pts1 - pts2) / 400))
 
 def _confronto_direto(df, t1, t2):
-    confrontos = df[
-        ((df['home_team'] == t1) & (df['away_team'] == t2)) |
-        ((df['home_team'] == t2) & (df['away_team'] == t1))
+    conf = df[
+        ((df['home_team']==t1)&(df['away_team']==t2))|
+        ((df['home_team']==t2)&(df['away_team']==t1))
     ].copy()
-    if len(confrontos) == 0:
-        return None, None, pd.DataFrame()
-    v1 = v2 = emp = 0
-    for _, row in confrontos.iterrows():
-        peso = row['peso_final']
-        if row['home_team'] == t1:
-            if row['home_score'] > row['away_score']: v1 += peso
-            elif row['home_score'] < row['away_score']: v2 += peso
-            else: emp += peso
+    if len(conf) == 0:
+        return None, None, None, pd.DataFrame(), 0
+    v1=v2=emp=0
+    for _,row in conf.iterrows():
+        p = row['peso_final']
+        if row['home_team']==t1:
+            if row['home_score']>row['away_score']: v1+=p
+            elif row['home_score']<row['away_score']: v2+=p
+            else: emp+=p
         else:
-            if row['away_score'] > row['home_score']: v1 += peso
-            elif row['away_score'] < row['home_score']: v2 += peso
-            else: emp += peso
-    total = v1 + v2 + emp
-    ultimos = confrontos.sort_values('date', ascending=False).head(5)
-    return (v1/total if total>0 else 0.5), (v2/total if total>0 else 0.5), ultimos
+            if row['away_score']>row['home_score']: v1+=p
+            elif row['away_score']<row['home_score']: v2+=p
+            else: emp+=p
+    total = v1+v2+emp
+    return v1/total, emp/total, v2/total, conf.sort_values('date',ascending=False).head(5), len(conf)
 
 def calcular_prob(label1, label2, df_hist):
     t1 = NOME_DATASET.get(label1, label1)
     t2 = NOME_DATASET.get(label2, label2)
 
-    pts1 = RANKING_FIFA.get(t1, 1500)
-    pts2 = RANKING_FIFA.get(t2, 1500)
-    total_pts = pts1 + pts2
-    fifa_t1 = pts1 / total_pts
-    fifa_t2 = pts2 / total_pts
-
-    h1 = _stats_gerais(df_hist, t1)
-    h2 = _stats_gerais(df_hist, t2)
-    total_h = h1 + h2
-    h1 = h1/total_h if total_h > 0 else 0.5
-    h2 = h2/total_h if total_h > 0 else 0.5
-
-    cd1, cd2, ultimos = _confronto_direto(df_hist, t1, t2)
+    p_elo = _elo_prob(RANKING_FIFA.get(t1,1500), RANKING_FIFA.get(t2,1500))
+    cd1, cdemp, cd2, ultimos, n_jogos = _confronto_direto(df_hist, t1, t2)
     tem_cd = cd1 is not None
 
-    if tem_cd:
-        prob1 = 0.50*fifa_t1 + 0.40*h1 + 0.10*cd1
-        prob2 = 0.50*fifa_t2 + 0.40*h2 + 0.10*cd2
-    else:
-        prob1 = 0.55*fifa_t1 + 0.45*h1
-        prob2 = 0.55*fifa_t2 + 0.45*h2
+    # Peso confronto direto cresce com nº de jogos (máx 10%)
+    w_cd = min(n_jogos * 0.02, 0.10) if tem_cd else 0
+    w_elo = 1.0 - w_cd
 
-    sm = 0.05
-    prob1 = prob1*(1-2*sm) + sm
-    prob2 = prob2*(1-2*sm) + sm
-    total = prob1 + prob2
+    if tem_cd:
+        raw1 = w_elo * p_elo + w_cd * cd1
+        raw2 = w_elo * (1-p_elo) + w_cd * cd2
+    else:
+        raw1 = p_elo
+        raw2 = 1 - p_elo
+
+    # Empate calibrado pelo equilíbrio do confronto
+    equilibrio = 1 - abs(raw1 - raw2)
+    w_emp = 0.15 + 0.15 * equilibrio  # entre 15% e 30%
+
+    prob1 = raw1 * (1 - w_emp)
+    prob_emp = w_emp
+    prob2 = raw2 * (1 - w_emp)
+    total = prob1 + prob_emp + prob2
 
     return {
         'prob1': round(prob1/total*100, 1),
+        'prob_emp': round(prob_emp/total*100, 1),
         'prob2': round(prob2/total*100, 1),
-        'fifa1': round(fifa_t1*100, 1),
-        'fifa2': round(fifa_t2*100, 1),
-        'hist1': round(h1*100, 1),
-        'hist2': round(h2*100, 1),
+        'fifa1': round(RANKING_FIFA.get(t1,1500)),
+        'fifa2': round(RANKING_FIFA.get(t2,1500)),
         'tem_cd': tem_cd,
+        'n_jogos': n_jogos,
+        'w_cd': round(w_cd*100),
         'cd1': round(cd1*100, 1) if tem_cd else None,
         'cd2': round(cd2*100, 1) if tem_cd else None,
-        'n_jogos': len(ultimos),
         'ultimos': ultimos,
     }
 
@@ -346,13 +327,12 @@ with aba_prob:
         st.markdown(f"## **{r['prob2']}%**")
 
     # Barra visual
-    empate_pct = round(100 - r['prob1'] - r['prob2'] + 5, 1)  # estimativa de empate
     fig = go.Figure(go.Bar(
-        x=[r['prob1'], empate_pct, r['prob2']],
+        x=[r['prob1'], r['prob_emp'], r['prob2']],
         y=[t1_label, "Draw / Empate", t2_label],
         orientation='h',
         marker_color=['#2ecc71', '#95a5a6', '#e74c3c'],
-        text=[f"{r['prob1']}%", f"{empate_pct}%", f"{r['prob2']}%"],
+        text=[f"{r['prob1']}%", f"{r['prob_emp']}%", f"{r['prob2']}%"],
         textposition='outside'
     ))
     fig.update_layout(xaxis=dict(range=[0, 100], title="Probability / Probabilidade (%)"),
@@ -364,18 +344,16 @@ with aba_prob:
         col_x, col_y = st.columns(2)
         with col_x:
             st.markdown(f"**{t1_label}**")
-            st.write(f"🏅 FIFA Ranking: {r['fifa1']}%")
-            st.write(f"📈 Historical / Histórico: {r['hist1']}%")
+            st.write(f"🏅 FIFA pts: {r['fifa1']}")
             if r['tem_cd']:
-                st.write(f"⚔️ Head-to-head / Confronto direto: {r['cd1']}%")
+                st.write(f"⚔️ Head-to-head wins / Vitórias diretas: {r['cd1']}% ({r['n_jogos']} jogos, peso {r['w_cd']}%)")
         with col_y:
             st.markdown(f"**{t2_label}**")
-            st.write(f"🏅 FIFA Ranking: {r['fifa2']}%")
-            st.write(f"📈 Historical / Histórico: {r['hist2']}%")
+            st.write(f"🏅 FIFA pts: {r['fifa2']}")
             if r['tem_cd']:
-                st.write(f"⚔️ Head-to-head / Confronto direto: {r['cd2']}%")
+                st.write(f"⚔️ Head-to-head wins / Vitórias diretas: {r['cd2']}% ({r['n_jogos']} jogos, peso {r['w_cd']}%)")
         if not r['tem_cd']:
-            st.info("No direct matches found since 2000 — head-to-head component not used. / Sem confrontos diretos desde 2000.")
+            st.info("No direct matches found since 2000 — only FIFA Ranking used. / Sem confrontos diretos, apenas Ranking FIFA.")
 
     # Últimos confrontos
     if r['tem_cd'] and not r['ultimos'].empty:
