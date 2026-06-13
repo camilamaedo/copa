@@ -151,10 +151,11 @@ def calcular_prob(label1, label2, df_hist):
 # ── UI ──
 st.title("⚽ World Cup 2026 — Research / Pesquisa")
 
-aba_aposta, aba_resultados, aba_prob = st.tabs([
+aba_aposta, aba_resultados, aba_prob, aba_simulacao = st.tabs([
     "🗳️ Bet / Apostar",
     "📊 Results / Resultados",
-    "🔮 Probability / Probabilidade"
+    "🔮 Probability / Probabilidade",
+    "🏆 Simulation / Simulação"
 ])
 
 # ─────────────────────────────────────────
@@ -300,12 +301,12 @@ with aba_prob:
 
     col1, col2 = st.columns(2)
     with col1:
-        idx_brasil = TIMES_COPA.index("Brazil / Brasil")
-        t1_label = st.selectbox("Team 1 / Time 1", TIMES_COPA, index=idx_brasil)
+        idx_arg = TIMES_COPA.index("Argentina / Argentina")
+        t1_label = st.selectbox("Team 1 / Time 1", TIMES_COPA, index=idx_arg)
     with col2:
         t2_opcoes = [t for t in TIMES_COPA if t != t1_label]
-        idx_arg = t2_opcoes.index("Argentina / Argentina") if "Argentina / Argentina" in t2_opcoes else 0
-        t2_label = st.selectbox("Team 2 / Time 2", t2_opcoes, index=idx_arg)
+        idx_bel = t2_opcoes.index("Belgium / Bélgica") if "Belgium / Bélgica" in t2_opcoes else 0
+        t2_label = st.selectbox("Team 2 / Time 2", t2_opcoes, index=idx_bel)
 
     f1 = BANDEIRAS.get(t1_label, "")
     f2 = BANDEIRAS.get(t2_label, "")
@@ -367,3 +368,181 @@ with aba_prob:
         st.info(f"No direct matches between {t1_label} and {t2_label} since 2000. / Nenhum confronto direto desde 2000.")
 
     st.caption("⚖️ Model / Modelo: 50% FIFA Ranking (Jun/2026) + 40% historical performance + 10% head-to-head · Laplace smoothing applied")
+
+# ─────────────────────────────────────────
+# ABA 4 — SIMULAÇÃO DA COPA
+# ─────────────────────────────────────────
+import numpy as np
+
+GRUPOS_COPA = {
+    "A": ["Mexico", "South Africa", "South Korea", "Czech Republic"],
+    "B": ["Canada", "Bosnia and Herzegovina", "Qatar", "Switzerland"],
+    "C": ["Brazil", "Morocco", "Haiti", "Scotland"],
+    "D": ["United States", "Paraguay", "Australia", "Turkey"],
+    "E": ["Germany", "Curacao", "Ivory Coast", "Ecuador"],
+    "F": ["Netherlands", "Japan", "Sweden", "Tunisia"],
+    "G": ["Belgium", "Egypt", "Iran", "New Zealand"],
+    "H": ["Spain", "Cape Verde", "Saudi Arabia", "Uruguay"],
+    "I": ["France", "Senegal", "Iraq", "Norway"],
+    "J": ["Argentina", "Algeria", "Austria", "Jordan"],
+    "K": ["Portugal", "DR Congo", "Uzbekistan", "Colombia"],
+    "L": ["England", "Croatia", "Ghana", "Panama"],
+}
+
+RANKING_SIM = {**RANKING_FIFA,
+    "South Africa": 1450, "South Korea": 1560, "Bosnia and Herzegovina": 1510,
+    "Haiti": 1320, "Scotland": 1530, "Paraguay": 1560, "Ivory Coast": 1560,
+    "Curacao": 1280, "Tunisia": 1510, "Sweden": 1590, "Saudi Arabia": 1480,
+    "Cape Verde": 1390, "Iraq": 1390, "Algeria": 1530, "Austria": 1600,
+    "Jordan": 1360, "Uzbekistan": 1420, "DR Congo": 1400, "Colombia": 1660,
+    "Ghana": 1470, "Panama": 1430,
+}
+
+def _elo_sim(t1, t2):
+    return 1 / (1 + 10 ** (-(RANKING_SIM.get(t1,1500) - RANKING_SIM.get(t2,1500)) / 400))
+
+def _jogo(t1, t2, det):
+    p = _elo_sim(t1, t2)
+    if det: return t1 if p >= 0.5 else t2
+    return t1 if np.random.random() < p else t2
+
+def _grupo(times, det):
+    pts = {t: 0 for t in times}
+    gd = {t: 0.0 for t in times}
+    for i, t1 in enumerate(times):
+        for t2 in times[i+1:]:
+            p = _elo_sim(t1, t2)
+            if det:
+                res = (3,0) if p>0.55 else (0,3) if p<0.45 else (1,1)
+            else:
+                r = np.random.random()
+                res = (3,0) if r < p*0.75 else (1,1) if r < p*0.75+0.25 else (0,3)
+            pts[t1]+=res[0]; pts[t2]+=res[1]
+            diff = (RANKING_SIM.get(t1,1500)-RANKING_SIM.get(t2,1500))/200
+            gd[t1]+=diff; gd[t2]-=diff
+    cl = sorted(times, key=lambda t:(pts[t],gd[t]), reverse=True)
+    return cl[0], cl[1], cl[2], pts
+
+def simular_copa(det=False):
+    res = {}
+    classificados = {}
+    terceiros = []
+    for letra, times in GRUPOS_COPA.items():
+        p1,p2,p3,pts = _grupo(times, det)
+        classificados[letra] = (p1,p2)
+        terceiros.append((p3, pts[p3], letra))
+    terceiros_cl = [t[0] for t in sorted(terceiros, key=lambda x:x[1], reverse=True)[:8]]
+    res['grupos'] = classificados
+
+    r32_pares = [
+        (classificados["A"][0], classificados["B"][1]),
+        (classificados["C"][0], classificados["D"][1]),
+        (classificados["E"][0], classificados["F"][1]),
+        (classificados["G"][0], classificados["H"][1]),
+        (classificados["I"][0], classificados["J"][1]),
+        (classificados["K"][0], classificados["L"][1]),
+        (classificados["B"][0], classificados["A"][1]),
+        (classificados["D"][0], classificados["C"][1]),
+        (classificados["F"][0], classificados["E"][1]),
+        (classificados["H"][0], classificados["G"][1]),
+        (classificados["J"][0], classificados["I"][1]),
+        (classificados["L"][0], classificados["K"][1]),
+        (terceiros_cl[0], terceiros_cl[1]),
+        (terceiros_cl[2], terceiros_cl[3]),
+        (terceiros_cl[4], terceiros_cl[5]),
+        (terceiros_cl[6], terceiros_cl[7]),
+    ]
+    r32v = [_jogo(t1,t2,det) for t1,t2 in r32_pares]
+    res['round32'] = list(zip([f"{a} vs {b}" for a,b in r32_pares], r32v))
+
+    r16p = [(r32v[i],r32v[i+1]) for i in range(0,16,2)]
+    r16v = [_jogo(t1,t2,det) for t1,t2 in r16p]
+    res['round16'] = list(zip([f"{a} vs {b}" for a,b in r16p], r16v))
+
+    qfp = [(r16v[i],r16v[i+1]) for i in range(0,8,2)]
+    qfv = [_jogo(t1,t2,det) for t1,t2 in qfp]
+    res['quartas'] = list(zip([f"{a} vs {b}" for a,b in qfp], qfv))
+
+    sfp = [(qfv[0],qfv[1]),(qfv[2],qfv[3])]
+    sfv = [_jogo(t1,t2,det) for t1,t2 in sfp]
+    res['semis'] = list(zip([f"{a} vs {b}" for a,b in sfp], sfv))
+
+    final_par = (sfv[0],sfv[1])
+    campeao = _jogo(final_par[0],final_par[1],det)
+    res['final'] = (f"{final_par[0]} vs {final_par[1]}", campeao)
+    res['campeao'] = campeao
+    return res
+
+with aba_simulacao:
+    st.subheader("🏆 World Cup 2026 Simulation / Simulação da Copa 2026")
+    st.markdown("""
+    **EN** — Based on FIFA Rankings and historical data, simulate the entire tournament or see the most likely outcome.
+
+    **PT** — Baseado no Ranking FIFA e histórico, simule o torneio inteiro ou veja o resultado mais provável.
+    """)
+
+    col_b1, col_b2 = st.columns(2)
+    with col_b1:
+        simular_btn = st.button("🎲 Simulate! / Simular!", use_container_width=True, type="primary")
+    with col_b2:
+        provavel_btn = st.button("📊 Most likely / Mais provável", use_container_width=True)
+
+    if 'sim_result' not in st.session_state:
+        st.session_state.sim_result = None
+        st.session_state.sim_det = False
+
+    if simular_btn:
+        st.session_state.sim_result = simular_copa(det=False)
+        st.session_state.sim_det = False
+    elif provavel_btn:
+        st.session_state.sim_result = simular_copa(det=True)
+        st.session_state.sim_det = True
+
+    if st.session_state.sim_result:
+        r = st.session_state.sim_result
+        det = st.session_state.sim_det
+
+        label = "📊 Most likely result / Resultado mais provável" if det else "🎲 Random simulation / Simulação aleatória"
+        st.info(label)
+
+        # Campeão em destaque
+        st.markdown(f"## 🏆 Champion / Campeão: **{r['campeao']}**")
+        st.markdown(f"### 🥈 Final: {r['final'][0]}")
+
+        st.divider()
+
+        # Grupos
+        with st.expander("👥 Group stage / Fase de grupos"):
+            cols = st.columns(3)
+            for i, (letra, (p1, p2)) in enumerate(r['grupos'].items()):
+                with cols[i % 3]:
+                    st.markdown(f"**Grupo {letra}**")
+                    st.write(f"🥇 {p1}")
+                    st.write(f"🥈 {p2}")
+
+        st.divider()
+
+        # Eliminatórias
+        col1, col2 = st.columns(2)
+
+        with col1:
+            st.subheader("⚔️ Semifinals / Semifinais")
+            for jogo, venc in r['semis']:
+                st.markdown(f"- {jogo} → **{venc}** ✅")
+
+            st.subheader("🏟️ Quarterfinals / Quartas")
+            for jogo, venc in r['quartas']:
+                st.markdown(f"- {jogo} → **{venc}**")
+
+        with col2:
+            st.subheader("🔟 Round of 16")
+            for jogo, venc in r['round16']:
+                st.markdown(f"- {jogo} → **{venc}**")
+
+        with st.expander("🔢 Round of 32"):
+            for jogo, venc in r['round32']:
+                st.markdown(f"- {jogo} → **{venc}**")
+
+        st.caption("⚖️ Model: FIFA Ranking Elo system · Deterministic = always picks favourite · Random = weighted probability draw")
+APPEOF
+echo "ok"
