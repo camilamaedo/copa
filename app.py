@@ -544,5 +544,3 @@ with aba_simulacao:
                 st.markdown(f"- {jogo} → **{venc}**")
 
         st.caption("⚖️ Model: FIFA Ranking Elo system · Deterministic = always picks favourite · Random = weighted probability draw")
-APPEOF
-echo "ok"
