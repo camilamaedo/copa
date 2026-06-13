@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-import numpy as np
 from utils.database import criar_tabela, salvar_aposta, carregar_apostas, total_respostas, TIMES_COPA
 
 st.set_page_config(
@@ -13,6 +12,161 @@ st.set_page_config(
 
 criar_tabela()
 
+# ── Constantes do modelo ──
+RANKING_FIFA = {
+    "Argentina": 1900, "Spain": 1876, "France": 1877, "England": 1826,
+    "Portugal": 1764, "Brazil": 1761, "Netherlands": 1758, "Morocco": 1756,
+    "Belgium": 1735, "Germany": 1730, "Croatia": 1717, "Senegal": 1689,
+    "Mexico": 1681, "United States": 1673, "Uruguay": 1673, "Japan": 1660,
+    "Switzerland": 1649, "Denmark": 1621, "Ecuador": 1600, "Poland": 1590,
+    "Serbia": 1580, "Turkey": 1570, "Australia": 1560, "Iran": 1550,
+    "Canada": 1540, "Egypt": 1530, "Nigeria": 1520, "Norway": 1510,
+    "Qatar": 1480, "New Zealand": 1420, "Ukraine": 1610, "Czech Republic": 1580,
+}
+
+PESOS_TORNEIO = {
+    'FIFA World Cup': 5, 'Copa América': 4, 'UEFA Euro': 4,
+    'African Cup of Nations': 4, 'AFC Asian Cup': 4, 'Gold Cup': 3,
+    'FIFA World Cup qualification': 3, 'UEFA Euro qualification': 2,
+    'African Cup of Nations qualification': 2, 'UEFA Nations League': 2,
+    'CONCACAF Nations League': 2, 'Friendly': 1,
+}
+
+BANDEIRAS = {
+    "Germany / Alemanha": "🇩🇪", "Argentina / Argentina": "🇦🇷",
+    "Australia / Austrália": "🇦🇺", "Belgium / Bélgica": "🇧🇪",
+    "Brazil / Brasil": "🇧🇷", "Canada / Canadá": "🇨🇦",
+    "Croatia / Croácia": "🇭🇷", "Denmark / Dinamarca": "🇩🇰",
+    "Egypt / Egito": "🇪🇬", "Ecuador / Equador": "🇪🇨",
+    "Spain / Espanha": "🇪🇸", "USA / EUA": "🇺🇸",
+    "France / França": "🇫🇷", "Netherlands / Holanda": "🇳🇱",
+    "England / Inglaterra": "🏴󠁧󠁢󠁥󠁮󠁧󠁿", "Iran / Irã": "🇮🇷",
+    "Japan / Japão": "🇯🇵", "Morocco / Marrocos": "🇲🇦",
+    "Mexico / México": "🇲🇽", "Nigeria / Nigéria": "🇳🇬",
+    "Norway / Noruega": "🇳🇴", "New Zealand / Nova Zelândia": "🇳🇿",
+    "Poland / Polônia": "🇵🇱", "Portugal / Portugal": "🇵🇹",
+    "Qatar / Qatar": "🇶🇦", "Czech Republic / República Tcheca": "🇨🇿",
+    "Senegal / Senegal": "🇸🇳", "Serbia / Sérvia": "🇷🇸",
+    "Switzerland / Suíça": "🇨🇭", "Turkey / Turquia": "🇹🇷",
+    "Ukraine / Ucrânia": "🇺🇦", "Uruguay / Uruguai": "🇺🇾",
+}
+
+NOME_DATASET = {
+    "Germany / Alemanha": "Germany", "Argentina / Argentina": "Argentina",
+    "Australia / Austrália": "Australia", "Belgium / Bélgica": "Belgium",
+    "Brazil / Brasil": "Brazil", "Canada / Canadá": "Canada",
+    "Croatia / Croácia": "Croatia", "Denmark / Dinamarca": "Denmark",
+    "Egypt / Egito": "Egypt", "Ecuador / Equador": "Ecuador",
+    "Spain / Espanha": "Spain", "USA / EUA": "United States",
+    "France / França": "France", "Netherlands / Holanda": "Netherlands",
+    "England / Inglaterra": "England", "Iran / Irã": "Iran",
+    "Japan / Japão": "Japan", "Morocco / Marrocos": "Morocco",
+    "Mexico / México": "Mexico", "Nigeria / Nigéria": "Nigeria",
+    "Norway / Noruega": "Norway", "New Zealand / Nova Zelândia": "New Zealand",
+    "Poland / Polônia": "Poland", "Portugal / Portugal": "Portugal",
+    "Qatar / Qatar": "Qatar", "Czech Republic / República Tcheca": "Czech Republic",
+    "Senegal / Senegal": "Senegal", "Serbia / Sérvia": "Serbia",
+    "Switzerland / Suíça": "Switzerland", "Turkey / Turquia": "Turkey",
+    "Ukraine / Ucrânia": "Ukraine", "Uruguay / Uruguai": "Uruguay",
+}
+
+@st.cache_data
+def carregar_historico():
+    df = pd.read_csv("results_2000.csv")
+    df['date'] = pd.to_datetime(df['date'])
+    df['peso_torneio'] = df['tournament'].map(PESOS_TORNEIO).fillna(1.5)
+    ano_min = df['date'].dt.year.min()
+    ano_max = df['date'].dt.year.max()
+    df['peso_tempo'] = (df['date'].dt.year - ano_min) / (ano_max - ano_min) * 2 + 1
+    df['peso_final'] = df['peso_torneio'] * df['peso_tempo']
+    return df
+
+def _stats_gerais(df, time):
+    jogos = df[(df['home_team'] == time) | (df['away_team'] == time)]
+    if len(jogos) == 0:
+        return 0.5
+    v = emp = d = 0
+    for _, row in jogos.iterrows():
+        peso = row['peso_final']
+        if row['home_team'] == time:
+            if row['home_score'] > row['away_score']: v += peso
+            elif row['home_score'] < row['away_score']: d += peso
+            else: emp += peso
+        else:
+            if row['away_score'] > row['home_score']: v += peso
+            elif row['away_score'] < row['home_score']: d += peso
+            else: emp += peso
+    total = v + emp + d
+    return v / total if total > 0 else 0.5
+
+def _confronto_direto(df, t1, t2):
+    confrontos = df[
+        ((df['home_team'] == t1) & (df['away_team'] == t2)) |
+        ((df['home_team'] == t2) & (df['away_team'] == t1))
+    ].copy()
+    if len(confrontos) == 0:
+        return None, None, pd.DataFrame()
+    v1 = v2 = emp = 0
+    for _, row in confrontos.iterrows():
+        peso = row['peso_final']
+        if row['home_team'] == t1:
+            if row['home_score'] > row['away_score']: v1 += peso
+            elif row['home_score'] < row['away_score']: v2 += peso
+            else: emp += peso
+        else:
+            if row['away_score'] > row['home_score']: v1 += peso
+            elif row['away_score'] < row['home_score']: v2 += peso
+            else: emp += peso
+    total = v1 + v2 + emp
+    ultimos = confrontos.sort_values('date', ascending=False).head(5)
+    return (v1/total if total>0 else 0.5), (v2/total if total>0 else 0.5), ultimos
+
+def calcular_prob(label1, label2, df_hist):
+    t1 = NOME_DATASET.get(label1, label1)
+    t2 = NOME_DATASET.get(label2, label2)
+
+    pts1 = RANKING_FIFA.get(t1, 1500)
+    pts2 = RANKING_FIFA.get(t2, 1500)
+    total_pts = pts1 + pts2
+    fifa_t1 = pts1 / total_pts
+    fifa_t2 = pts2 / total_pts
+
+    h1 = _stats_gerais(df_hist, t1)
+    h2 = _stats_gerais(df_hist, t2)
+    total_h = h1 + h2
+    h1 = h1/total_h if total_h > 0 else 0.5
+    h2 = h2/total_h if total_h > 0 else 0.5
+
+    cd1, cd2, ultimos = _confronto_direto(df_hist, t1, t2)
+    tem_cd = cd1 is not None
+
+    if tem_cd:
+        prob1 = 0.50*fifa_t1 + 0.40*h1 + 0.10*cd1
+        prob2 = 0.50*fifa_t2 + 0.40*h2 + 0.10*cd2
+    else:
+        prob1 = 0.55*fifa_t1 + 0.45*h1
+        prob2 = 0.55*fifa_t2 + 0.45*h2
+
+    sm = 0.05
+    prob1 = prob1*(1-2*sm) + sm
+    prob2 = prob2*(1-2*sm) + sm
+    total = prob1 + prob2
+
+    return {
+        'prob1': round(prob1/total*100, 1),
+        'prob2': round(prob2/total*100, 1),
+        'fifa1': round(fifa_t1*100, 1),
+        'fifa2': round(fifa_t2*100, 1),
+        'hist1': round(h1*100, 1),
+        'hist2': round(h2*100, 1),
+        'tem_cd': tem_cd,
+        'cd1': round(cd1*100, 1) if tem_cd else None,
+        'cd2': round(cd2*100, 1) if tem_cd else None,
+        'n_jogos': len(ultimos),
+        'ultimos': ultimos,
+    }
+
+# ── UI ──
 st.title("⚽ World Cup 2026 — Research / Pesquisa")
 
 aba_aposta, aba_resultados, aba_prob = st.tabs([
@@ -91,7 +245,6 @@ with aba_resultados:
 
     st.divider()
     col_a, col_b = st.columns(2)
-
     with col_a:
         st.subheader("🏆 Champion votes / Votos campeão")
         campeao_counts = (
@@ -103,7 +256,6 @@ with aba_resultados:
         fig1.update_layout(showlegend=False, coloraxis_showscale=False, yaxis=dict(autorange="reversed"))
         fig1.update_traces(textposition="outside")
         st.plotly_chart(fig1, use_container_width=True)
-
     with col_b:
         st.subheader("🥧 Distribution / Distribuição")
         fig2 = px.pie(campeao_counts, names="Team / Time", values="Votes / Votos", hole=0.4,
@@ -157,145 +309,81 @@ with aba_resultados:
 with aba_prob:
     st.subheader("🔮 Head-to-Head Probability / Probabilidade de Confronto")
     st.markdown("""
-    **EN** — Based on historical international matches since 2000, weighted by tournament importance and recency.
+    **EN** — Hybrid model: 50% FIFA Ranking + 40% historical performance (since 2000, weighted by tournament & recency) + 10% head-to-head record.
 
-    **PT** — Baseado em jogos internacionais desde 2000, com peso por importância do torneio e data do jogo.
+    **PT** — Modelo híbrido: 50% Ranking FIFA + 40% histórico geral (desde 2000, ponderado por torneio e data) + 10% confronto direto.
     """)
-
-    # Pesos por torneio
-    PESOS_TORNEIO = {
-        'FIFA World Cup': 5,
-        'Copa América': 4,
-        'UEFA Euro': 4,
-        'African Cup of Nations': 4,
-        'AFC Asian Cup': 4,
-        'Gold Cup': 3,
-        'FIFA World Cup qualification': 3,
-        'UEFA Euro qualification': 2,
-        'African Cup of Nations qualification': 2,
-        'UEFA Nations League': 2,
-        'CONCACAF Nations League': 2,
-        'Friendly': 1,
-    }
-
-    # Mapa PT/EN → nome no dataset
-    NOME_DATASET = {
-        "Germany / Alemanha": "Germany",
-        "Argentina / Argentina": "Argentina",
-        "Australia / Austrália": "Australia",
-        "Belgium / Bélgica": "Belgium",
-        "Brazil / Brasil": "Brazil",
-        "Canada / Canadá": "Canada",
-        "Croatia / Croácia": "Croatia",
-        "Denmark / Dinamarca": "Denmark",
-        "Egypt / Egito": "Egypt",
-        "Ecuador / Equador": "Ecuador",
-        "Spain / Espanha": "Spain",
-        "USA / EUA": "United States",
-        "France / França": "France",
-        "Netherlands / Holanda": "Netherlands",
-        "England / Inglaterra": "England",
-        "Iran / Irã": "Iran",
-        "Japan / Japão": "Japan",
-        "Morocco / Marrocos": "Morocco",
-        "Mexico / México": "Mexico",
-        "Nigeria / Nigéria": "Nigeria",
-        "Norway / Noruega": "Norway",
-        "New Zealand / Nova Zelândia": "New Zealand",
-        "Poland / Polônia": "Poland",
-        "Portugal / Portugal": "Portugal",
-        "Qatar / Qatar": "Qatar",
-        "Czech Republic / República Tcheca": "Czech Republic",
-        "Senegal / Senegal": "Senegal",
-        "Serbia / Sérvia": "Serbia",
-        "Switzerland / Suíça": "Switzerland",
-        "Turkey / Turquia": "Turkey",
-        "Ukraine / Ucrânia": "Ukraine",
-        "Uruguay / Uruguai": "Uruguay",
-    }
-
-    @st.cache_data
-    def carregar_historico():
-        df = pd.read_csv("results_2000.csv")
-        df['date'] = pd.to_datetime(df['date'])
-        df['peso_torneio'] = df['tournament'].map(PESOS_TORNEIO).fillna(1.5)
-        ano_min = df['date'].dt.year.min()
-        ano_max = df['date'].dt.year.max()
-        df['peso_tempo'] = (df['date'].dt.year - ano_min) / (ano_max - ano_min) * 2 + 1
-        df['peso_final'] = df['peso_torneio'] * df['peso_tempo']
-        return df
-
-    def calcular_prob(time1, time2, df_hist):
-        confrontos = df_hist[
-            ((df_hist['home_team'] == time1) & (df_hist['away_team'] == time2)) |
-            ((df_hist['home_team'] == time2) & (df_hist['away_team'] == time1))
-        ].copy()
-
-        if len(confrontos) == 0:
-            return None
-
-        v1 = v2 = emp = 0
-        for _, row in confrontos.iterrows():
-            peso = row['peso_final']
-            if row['home_team'] == time1:
-                if row['home_score'] > row['away_score']: v1 += peso
-                elif row['home_score'] < row['away_score']: v2 += peso
-                else: emp += peso
-            else:
-                if row['away_score'] > row['home_score']: v1 += peso
-                elif row['away_score'] < row['home_score']: v2 += peso
-                else: emp += peso
-
-        total = v1 + v2 + emp
-        return {
-            'jogos': len(confrontos),
-            'v1': round(v1 / total * 100, 1),
-            'emp': round(emp / total * 100, 1),
-            'v2': round(v2 / total * 100, 1),
-            'confrontos': confrontos.sort_values('date', ascending=False).head(5)
-        }
 
     df_hist = carregar_historico()
 
     col1, col2 = st.columns(2)
     with col1:
-        time1_label = st.selectbox("🏠 Team 1 / Time 1", TIMES_COPA, index=TIMES_COPA.index("Brazil / Brasil"))
+        idx_brasil = TIMES_COPA.index("Brazil / Brasil")
+        t1_label = st.selectbox("Team 1 / Time 1", TIMES_COPA, index=idx_brasil)
     with col2:
-        time2_opcoes = [t for t in TIMES_COPA if t != time1_label]
-        time2_label = st.selectbox("✈️ Team 2 / Time 2", time2_opcoes, index=time2_opcoes.index("Argentina / Argentina"))
+        t2_opcoes = [t for t in TIMES_COPA if t != t1_label]
+        idx_arg = t2_opcoes.index("Argentina / Argentina") if "Argentina / Argentina" in t2_opcoes else 0
+        t2_label = st.selectbox("Team 2 / Time 2", t2_opcoes, index=idx_arg)
 
-    time1 = NOME_DATASET.get(time1_label, time1_label)
-    time2 = NOME_DATASET.get(time2_label, time2_label)
+    f1 = BANDEIRAS.get(t1_label, "")
+    f2 = BANDEIRAS.get(t2_label, "")
 
-    resultado = calcular_prob(time1, time2, df_hist)
+    r = calcular_prob(t1_label, t2_label, df_hist)
 
-    if resultado is None:
-        st.warning(f"No historical matches found between {time1_label} and {time2_label} since 2000. / Nenhum confronto encontrado desde 2000.")
-    else:
-        st.divider()
-        st.markdown(f"### Based on **{resultado['jogos']}** matches / jogos")
+    st.divider()
 
-        fig = go.Figure(go.Bar(
-            x=[resultado['v1'], resultado['emp'], resultado['v2']],
-            y=[time1_label, "Draw / Empate", time2_label],
-            orientation='h',
-            marker_color=['#2ecc71', '#95a5a6', '#e74c3c'],
-            text=[f"{resultado['v1']}%", f"{resultado['emp']}%", f"{resultado['v2']}%"],
-            textposition='outside'
-        ))
-        fig.update_layout(
-            xaxis=dict(range=[0, 100], title="Probability / Probabilidade (%)"),
-            height=250,
-            showlegend=False
-        )
-        st.plotly_chart(fig, use_container_width=True)
+    # Placar de probabilidade
+    col_a, col_b, col_c = st.columns([2, 1, 2])
+    with col_a:
+        st.markdown(f"### {f1} {t1_label}")
+        st.markdown(f"## **{r['prob1']}%**")
+    with col_b:
+        st.markdown("### VS")
+        st.markdown("##### to win / de ganhar")
+    with col_c:
+        st.markdown(f"### {f2} {t2_label}")
+        st.markdown(f"## **{r['prob2']}%**")
 
-        # Últimos confrontos
-        st.subheader("📋 Last matches / Últimos confrontos")
-        ult = resultado['confrontos'][['date', 'home_team', 'home_score', 'away_score', 'away_team', 'tournament']].copy()
-        ult['date'] = ult['date'].dt.strftime('%d/%m/%Y')
+    # Barra visual
+    fig = go.Figure(go.Bar(
+        x=[r['prob1'], r['prob2']],
+        y=[f"{f1} {t1_label}", f"{f2} {t2_label}"],
+        orientation='h',
+        marker_color=['#2ecc71', '#e74c3c'],
+        text=[f"{r['prob1']}%", f"{r['prob2']}%"],
+        textposition='outside'
+    ))
+    fig.update_layout(xaxis=dict(range=[0, 100], title="Probability / Probabilidade (%)"),
+                      height=200, showlegend=False, margin=dict(l=10, r=40, t=10, b=10))
+    st.plotly_chart(fig, use_container_width=True)
+
+    # Detalhamento dos componentes
+    with st.expander("📊 See model breakdown / Ver detalhes do modelo"):
+        col_x, col_y = st.columns(2)
+        with col_x:
+            st.markdown(f"**{f1} {t1_label}**")
+            st.write(f"🏅 FIFA Ranking: {r['fifa1']}%")
+            st.write(f"📈 Historical / Histórico: {r['hist1']}%")
+            if r['tem_cd']:
+                st.write(f"⚔️ Head-to-head / Confronto direto: {r['cd1']}%")
+        with col_y:
+            st.markdown(f"**{f2} {t2_label}**")
+            st.write(f"🏅 FIFA Ranking: {r['fifa2']}%")
+            st.write(f"📈 Historical / Histórico: {r['hist2']}%")
+            if r['tem_cd']:
+                st.write(f"⚔️ Head-to-head / Confronto direto: {r['cd2']}%")
+        if not r['tem_cd']:
+            st.info("No direct matches found since 2000 — head-to-head component not used. / Sem confrontos diretos desde 2000.")
+
+    # Últimos confrontos
+    if r['tem_cd'] and not r['ultimos'].empty:
+        st.subheader(f"📋 Last matches / Últimos confrontos ({r['n_jogos']} found / encontrados)")
+        ult = r['ultimos'][['date','home_team','home_score','away_score','away_team','tournament']].copy()
+        ult['date'] = pd.to_datetime(ult['date']).dt.strftime('%d/%m/%Y')
         ult['Score'] = ult['home_score'].astype(int).astype(str) + ' x ' + ult['away_score'].astype(int).astype(str)
-        ult = ult.rename(columns={'date': 'Date', 'home_team': 'Home', 'away_team': 'Away', 'tournament': 'Tournament'})
-        st.dataframe(ult[['Date', 'Home', 'Score', 'Away', 'Tournament']], use_container_width=True, hide_index=True)
+        ult = ult.rename(columns={'date':'Date','home_team':'Home','away_team':'Away','tournament':'Tournament'})
+        st.dataframe(ult[['Date','Home','Score','Away','Tournament']], use_container_width=True, hide_index=True)
+    elif not r['tem_cd']:
+        st.info(f"No direct matches between {f1} {t1_label} and {f2} {t2_label} since 2000. / Nenhum confronto direto desde 2000.")
 
-        st.caption("⚖️ Weights / Pesos: FIFA World Cup ×5 · Major tournaments ×4 · Qualifiers ×2-3 · Friendly ×1 · Recent matches weighted higher / Jogos recentes com maior peso")
+    st.caption("⚖️ Model / Modelo: 50% FIFA Ranking (Jun/2026) + 40% historical performance + 10% head-to-head · Laplace smoothing applied")
