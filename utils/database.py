@@ -5,19 +5,25 @@ from supabase import create_client
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
 SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 
-# 32 países da Copa do Mundo 2026 — PT/EN
+# 48 países da Copa do Mundo 2026 — PT/EN
 TIMES_COPA = sorted([
     "Germany / Alemanha", "Argentina / Argentina", "Australia / Austrália",
+    "Algeria / Argélia", "Austria / Áustria", "Saudi Arabia / Arábia Saudita",
     "Belgium / Bélgica", "Brazil / Brasil", "Canada / Canadá",
-    "Croatia / Croácia", "Denmark / Dinamarca", "Egypt / Egito",
-    "Ecuador / Equador", "Spain / Espanha", "USA / EUA",
-    "France / França", "Netherlands / Holanda", "England / Inglaterra",
-    "Iran / Irã", "Japan / Japão", "Morocco / Marrocos",
-    "Mexico / México", "Nigeria / Nigéria", "Norway / Noruega",
-    "New Zealand / Nova Zelândia", "Poland / Polônia", "Portugal / Portugal",
-    "Qatar / Qatar", "Czech Republic / República Tcheca", "Senegal / Senegal",
-    "Serbia / Sérvia", "Switzerland / Suíça", "Turkey / Turquia",
-    "Ukraine / Ucrânia", "Uruguay / Uruguai",
+    "Cape Verde / Cabo Verde", "Colombia / Colômbia", "South Korea / Coreia do Sul",
+    "Croatia / Croácia", "Curacao / Curaçao", "DR Congo / Congo RD",
+    "Ecuador / Equador", "Egypt / Egito", "Scotland / Escócia",
+    "Spain / Espanha", "USA / EUA", "France / França",
+    "Ghana / Gana", "Haiti / Haiti", "Netherlands / Holanda",
+    "England / Inglaterra", "Iran / Irã", "Iraq / Iraque",
+    "Ivory Coast / Costa do Marfim", "Japan / Japão", "Jordan / Jordânia",
+    "Morocco / Marrocos", "Mexico / México", "New Zealand / Nova Zelândia",
+    "Norway / Noruega", "Panama / Panamá", "Paraguay / Paraguai",
+    "Portugal / Portugal", "Qatar / Qatar", "Czech Republic / República Tcheca",
+    "Senegal / Senegal", "Switzerland / Suíça", "Sweden / Suécia",
+    "South Africa / África do Sul", "Tunisia / Tunísia", "Turkey / Turquia",
+    "Uruguay / Uruguai", "Uzbekistan / Uzbequistão",
+    "Bosnia and Herzegovina / Bósnia e Herzegovina",
 ])
 
 def get_client():
