@@ -245,6 +245,14 @@ def simular_copa(notas, det=False):
         'final': (f"{sfv[0]} vs {sfv[1]}", campeao), 'campeao': campeao,
     }
 
+def monte_carlo(notas, n=10000):
+    contagem = {}
+    for _ in range(n):
+        r = simular_copa(notas, det=False)
+        c = r['campeao']
+        contagem[c] = contagem.get(c, 0) + 1
+    return {t: round(v / n * 100, 1) for t, v in sorted(contagem.items(), key=lambda x: x[1], reverse=True)}
+
 # ── UI ──
 st.title("⚽ World Cup 2026 — Research / Pesquisa")
 
@@ -422,20 +430,50 @@ with aba_simulacao:
     **PT** — Simule o torneio inteiro usando nosso modelo híbrido. Cada clique dá um resultado diferente!
     """)
     notas_sim = calcular_notas_historicas()
-    cb1,cb2 = st.columns(2)
+    cb1,cb2,cb3 = st.columns(3)
     with cb1:
         sim_btn = st.button("🎲 Simulate! / Simular!", use_container_width=True, type="primary")
     with cb2:
         prov_btn = st.button("📊 Most likely / Mais provável", use_container_width=True)
+    with cb3:
+        mc_btn = st.button("🔁 Monte Carlo (10k)", use_container_width=True)
     if 'sim_result' not in st.session_state:
         st.session_state.sim_result = None
         st.session_state.sim_det = False
+        st.session_state.mc_result = None
     if sim_btn:
         st.session_state.sim_result = simular_copa(notas_sim, det=False)
         st.session_state.sim_det = False
+        st.session_state.mc_result = None
     elif prov_btn:
         st.session_state.sim_result = simular_copa(notas_sim, det=True)
         st.session_state.sim_det = True
+        st.session_state.mc_result = None
+    elif mc_btn:
+        st.session_state.mc_result = monte_carlo(notas_sim, n=10000)
+        st.session_state.sim_result = None
+    if st.session_state.get('mc_result'):
+        st.info("🔁 Monte Carlo — 10,000 simulations / 10.000 simulações")
+        mc = st.session_state.mc_result
+        top = list(mc.items())[:10]
+        import plotly.graph_objects as go
+        fig_mc = go.Figure(go.Bar(
+            x=[v for _,v in top],
+            y=[t for t,_ in top],
+            orientation='h',
+            text=[f"{v}%" for _,v in top],
+            textposition='outside',
+            marker_color='#e07b39'
+        ))
+        fig_mc.update_layout(
+            xaxis_title="% of simulations won / % das simulações vencidas",
+            yaxis=dict(autorange="reversed"),
+            height=400,
+            margin=dict(l=120,r=60,t=20,b=40)
+        )
+        st.plotly_chart(fig_mc, use_container_width=True)
+        st.caption("⚖️ Model: 55% FIFA Ranking + 35% historical (adjusted by opponent strength) + 10% randomness")
+
     if st.session_state.sim_result:
         r = st.session_state.sim_result
         det = st.session_state.sim_det
